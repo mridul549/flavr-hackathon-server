@@ -4,28 +4,29 @@ const Owner = require('../../../../models/owner/owner')
 const Outlet = require('../../../../models/outlet/outlet')
 
 module.exports.addCategory = async (req,res) => {
-    const ownerId = req.userData.userId
+    const ownerId = req.userData.ownerid
     let categoryName = req.body.categoryName 
     const outletid = req.body.outletid
     const categoryIconId = req.body.categoryIconId
     categoryName = categoryName.charAt(0).toUpperCase() + categoryName.slice(1)
 
     try {
-        const owner = await Owner.findById(ownerId)
-        if(!owner) {
+        const owner = await Owner.find({ _id: ownerId })
+
+        if(owner.length===0) {
             return res.status(404).json({
                 message: "Owner not found"
             })
         }
 
-        const outlet = await Outlet.findById(outletid)
-        if(!outlet) {
+        const outlet = await Outlet.find({ _id: outletid })
+        if(outlet.length===0) {
             return res.status(404).json({
                 message: "Outlet not found"
             })
         }
 
-        if(outlet.owner.toString()!==ownerId) {
+        if(outlet[0].owner.toString()!==ownerId) {
             return res.status(401).json({
                 message: "Unauthorized access"
             })
@@ -59,9 +60,9 @@ module.exports.addCategory = async (req,res) => {
         }
         
     } catch (error) {
-        console.log(err);
+        console.log(error);
         return res.status(500).json({
-            error: err
+            error: error
         })
     }
 }
