@@ -16,7 +16,7 @@ client.connect();
 client.on('connect', () => {
     console.log('Connected to Redis Cloud');
 });
-  
+
 client.on('error', (err) => {
     console.error('Redis Error:', err);
 });
