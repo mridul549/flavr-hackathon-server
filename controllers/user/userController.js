@@ -4,6 +4,8 @@ const bcrypt     = require('bcrypt');
 const jwt        = require('jsonwebtoken');
 const mailController = require('../../mail/mailController')
 const cloudinary = require('cloudinary').v2;
+const Product = require('../../models/outlet/product/product');
+const Outlet = require('../../models/outlet/outlet');
 
 cloudinary.config({ 
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
@@ -326,4 +328,279 @@ module.exports.updateImage = (req,res) => {
             error: err
         })
     })
+}
+
+
+// adds a single product to cart with its product id and quantity
+module.exports.addOneProductToCart = (req,res) => {
+    User.updateOne({ _id: req.userData.userid }, {
+        $push: {
+            cart: {
+                product: req.body.productid,
+                quantity: req.body.quantity
+            }
+        }
+    })
+    .exec()
+    .then(result => {
+        Product.find( {_id: req.body.productid} )
+        .select('_id category productName description price')
+        .exec()
+        .then(result => {
+            return res.status(201).json({
+                message: "Product added to cart",
+                product: result,
+                quantity: req.body.quantity
+            })
+        })
+        .catch(err => {
+            console.log(err);
+            res.status(500).json({
+                error: err
+            })
+        })
+
+    })
+    .catch(err => {
+        console.log(err);
+        res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.addProductsToCart = (req,res) => {
+    const items = req.body.items
+    const userid = req.userData.userid
+    const outletid = req.body.outletid
+
+    Product.find({ outlet: outletid })
+    .exec()
+    .then(async result => {
+        if(result.length>0){
+            // create a set of IDs of products of an outlet- O(N)
+            const set = new Set(result.map(obj => obj._id.toString()))
+            for (let i = 0; i < items.length; i++) {
+                const productid = items[i].product;
+
+                // check if the product id exists in the set- O(1)
+                if(!set.has(productid)){
+                    return res.status(400).json({
+                        error: "One or more products in the cart do not belong to this outlet"
+                    })
+                }
+            }
+            
+            try {
+                await User.findOneAndUpdate({ _id: userid },
+                    {
+                        $set: {
+                            cart: {
+                                outlet: outletid,
+                                products: items
+                            }
+                        }
+                    },
+                    { upsert: true }
+                );
+                return res.status(201).json({
+                    message: "Cart updated successfully",
+                    outlet: outletid,
+                    itemsAdded: items
+                })
+                
+            } catch (error) {
+                console.log(err);
+                return res.status(500).json({
+                    error: err
+                })
+            }
+        } else {
+            return res.status(404).json({
+                error: "No products found for the selected outlet"
+            })
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
+
+}
+
+module.exports.getCartItems = (req,res) => {
+    User.find({ _id: req.userData.userid })
+    .populate('cart.products.product', '_id category productName description price productImage')
+    .exec()
+    .then(result => {
+        return res.status(200).json({
+            size: result[0].cart.length,
+            cart: result[0].cart
+        })
+    })
+    .catch(err => {
+        console.log(err);
+        res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.getCartSize = (req,res) => {
+    User.find({ _id: req.userData.userid })
+    .exec()
+    .then(result => {
+        return res.status(200).json({
+            size: result[0].cart.length,
+        })
+    })
+    .catch(err => {
+        console.log(err);
+        res.status(500).json({
+            error: err
+        })
+    })
+}
+
+// update a cart element quantity
+// if quantity is 0 it is removed
+// else it is updated to the obtained
+module.exports.updateQuantity = async (req,res) => {
+    const productid = req.body.productid
+    const variant   = req.body.variant
+    const quantity  = req.body.quantity
+    const userid    = req.userData.userid
+    const outletid  = req.body.outletid
+
+    try {
+        const user = await User.findById(userid);
+        if (!user) {
+            return res.status(404).json({
+                error: "User not found"
+            })
+        }
+
+        if(user.cart.outlet && user.cart.outlet.toString() !== outletid) {
+            return res.status(400).json({
+                message: "Cart items do not belong to this outlet"
+            })
+        }
+
+        if(!user.cart.outlet) {
+            const outlet = await Outlet.findById(outletid);
+            if (!outlet) {
+                return res.status(404).json({
+                    message: "Outlet not found"
+                })
+            }
+            user.cart.outlet = outletid
+        }
+
+        const cartItem = user.cart.products.find(item => item.product.toString() === productid && item.variant === variant);
+        if (!cartItem) {
+            // check if the product exists in the database
+            const product = await Product.findById(productid);
+            if (!product) {
+                return res.status(404).json({
+                    error: "Product not found"
+                })
+            }
+
+            if(product.outlet.toString() !== outletid) {
+                return res.status(400).json({
+                    message: "Product does not belong to this outlet"
+                })
+            }
+
+            // If item is not found in the cart, add it
+            user.cart.products.push({
+                product: productid,
+                variant: variant,
+                quantity: quantity
+            });
+
+            await user.save();
+
+            return res.status(200).json({
+                message: "Item added to cart"
+            });
+        }
+    
+        if (quantity === 0) {
+            user.cart.products.pull(cartItem);
+            await user.save();
+            return res.status(200).json({
+                message: "Item removed from cart"
+            })
+        } else {
+            cartItem.quantity = quantity;
+            await user.save();
+            return res.status(200).json({
+                message: "Cart item updated successfully!"
+            })
+        }
+    
+    } catch (error) {
+        return res.status(500).json({
+            error: "error while updating cart item"
+        })
+    }
+
+}
+
+module.exports.clearCart = (req,res) => {
+    const userid = req.userData.userid
+
+    User.updateOne({ _id: userid }, {
+        $set: {
+            cart: {}
+        }
+    })
+    .exec()
+    .then(result => {
+        return res.status(200).json({
+            message: "Cleared cart",
+            ACK: result
+        })
+    })
+    .catch(err => {
+        console.log(err);
+        res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.removeProductCart = async (req,res) => {
+    const userid = req.userData.userid
+    const productid = req.body.productid
+    const variant = req.body.variant
+
+    const user = await User.findById(userid);
+    try {
+        if (!user) {
+            return res.status(404).json({
+                error: "User not found"
+            })
+        }
+    
+        const cartItem = user.cart.find(item => item.product.toString() === productid && item.variant === variant);
+        if (!cartItem) {
+            return res.status(404).json({
+                error: "Cart item not found"
+            })
+        }
+    
+        user.cart.pull(cartItem);
+        await user.save();
+        return res.status(200).json({
+            message: "Item removed from cart"
+        })
+    } catch (error) {
+        return res.status(500).json({
+            error: "Couldn't remove product from cart"
+        })   
+    }
 }
