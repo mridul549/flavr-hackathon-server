@@ -131,3 +131,66 @@ module.exports.login = (req,res) => {
         })
     })
 }
+
+function getTokenForGoogleAuth (user,req,res) {
+    const token = jwt.sign({
+        email: user.email,
+        userid: user._id,
+        username: user.userName,
+    }, process.env.TOKEN_SECRET, {
+        expiresIn: "30 days"
+    })
+    return res.status(200).json({
+        message: "Auth successful",
+        token: token
+    })
+}
+
+module.exports.google_Login_Signup = (req,res) => {
+    const email = req.body.email
+
+    User.find({ email: email })
+    .exec()
+    .then(result => {
+        // no user found with same credentials- sign the user up
+        if(result.length==0){
+            // update the profile pic too
+            const user = new User({
+                _id: new mongoose.Types.ObjectId,
+                userName: req.body.userName,
+                email: req.body.email,
+                ownerProfilePic: {
+                    url: req.body.profileUrl
+                },
+                verification: true,
+                authMethod: "google"
+            })
+            user
+            .save()
+            .then(newUser => {
+                getTokenForGoogleAuth(newUser,req,res)
+            })
+            .catch(err => {
+                console.log(err);
+                res.status(500).json({
+                    error: err
+                })
+            })
+        } else {
+            // Log the user in
+            const authMethod = result[0].authMethod
+            if(authMethod==='regular'){
+                return res.status(400).json({
+                    message: "Please use normal login"
+                })
+            }
+            getTokenForGoogleAuth(result[0],req,res)
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
+}

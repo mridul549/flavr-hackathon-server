@@ -48,7 +48,6 @@ module.exports.signup = (req,res) => {
                          * the role determines whether it's a user, owner or maintainer
                          * user -> 0
                          * owner -> 1
-                         * maintainer -> 2
                          */
                         const key = req.body.email
                         const role = 1
@@ -124,6 +123,92 @@ module.exports.login = (req,res) => {
     .catch(err => {
         console.log(err);
         res.status(500).json({
+            error: err
+        })
+    })
+}
+
+function getTokenForGoogleAuth (user,req,res) {
+    const token = jwt.sign({
+        email: user.email,
+        ownerid: user._id,
+        ownername: user.userName,
+    }, process.env.TOKEN_SECRET, {
+        expiresIn: "30 days"
+    })
+    return res.status(200).json({
+        message: "Auth successful",
+        token: token
+    })
+}
+
+module.exports.google_Login_Signup = (req,res) => {
+    const email = req.body.email
+
+    Owner.find({ email: email })
+    .exec()
+    .then(result => {
+        // no owner found with same credentials- sign the owner up
+        if(result.length==0){
+            // TODO- Update or add the details in future which are recieved through google
+            // update the profile pic too
+            const owner = new Owner({
+                _id: new mongoose.Types.ObjectId,
+                ownerName: req.body.ownerName,
+                email: req.body.email,
+                ownerProfilePic: {
+                    url: req.body.profileUrl
+                },
+                verification: true,
+                authMethod: "google"
+            })
+            owner
+            .save()
+            .then(newOwner => {
+                getTokenForGoogleAuth(newOwner,req,res)
+            })
+            .catch(err => {
+                console.log(err);
+                res.status(500).json({
+                    error: err
+                })
+            })
+        } else {
+            // Log the Owner in
+            const authMethod = result[0].authMethod
+            if(authMethod==='regular'){
+                return res.status(400).json({
+                    message: "Please use normal login"
+                })
+            }
+            else {
+                getTokenForGoogleAuth(result[0],req,res)
+            }
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.verifyOwner = (req,res) => {
+    const email = req.body.email
+
+    Owner.updateOne({ email: email }, {
+        $set: { verification: true }
+    })
+    .exec()
+    .then(result => {
+        return res.status(200).json({
+            message: "Owner verified"
+        })
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
             error: err
         })
     })

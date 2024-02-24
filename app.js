@@ -17,6 +17,9 @@ mongoose.connection.on('connected', function() {
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: false}));
 
+// Require bull queue processor for orders
+require('./queue/index')
+
 // implementing CORS security mechanism
 app.use((req,res,next) => {
     res.header("Access-Control-Allow-Origin", "*");
