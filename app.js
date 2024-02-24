@@ -14,6 +14,10 @@ mongoose.connection.on('connected', function() {
     console.log("Connected to MongoDB")
 });
 
+app.use(fileUpload({
+    useTempFiles: true
+}))
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: false}));
 

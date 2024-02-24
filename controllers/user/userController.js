@@ -3,6 +3,14 @@ const User = require('../../models/user/user');
 const bcrypt     = require('bcrypt');
 const jwt        = require('jsonwebtoken');
 const mailController = require('../../mail/mailController')
+const cloudinary = require('cloudinary').v2;
+
+cloudinary.config({ 
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
+    api_key: process.env.CLOUDINARY_API_KEY, 
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true
+});
 
 module.exports.signup = (req,res) => {
     User.find({ email: req.body.email })
@@ -185,6 +193,131 @@ module.exports.google_Login_Signup = (req,res) => {
                 })
             }
             getTokenForGoogleAuth(result[0],req,res)
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.getUserProfile = (req,res) => {
+    const userid = req.userData.userid
+
+    User.find({ _id: userid })
+    .select('_id userName email orders userProfilePic')
+    .exec()
+    .then(result => {
+        if(result.length>0) {
+            return res.status(201).json({
+                user: result
+            })
+        } else {
+            return res.status(404).json({
+                error: "User not found!"
+            })
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.updateUser = (req,res) => {
+    const userid = req.userData.userid
+
+    User.find({ _id: userid })
+    .exec()
+    .then(result => {
+        if(result.length>0) {
+            const updateOps = {};
+            for(const ops of req.body.updates) {
+                updateOps[ops.propName] = ops.value
+            }
+            User.updateOne({ _id: userid }, {
+                $set: updateOps
+            })
+            .exec()
+            .then(result => {
+                return res.status(200).json({
+                    message: "User updated successfully"
+                })
+            })
+            .catch(err => {
+                console.log(err);
+                res.status(500).json({
+                    error: err
+                })
+            })
+        } else {
+            return res.status(404).json({
+                error: "User not found"
+            })
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.updateImage = (req,res) => {
+    const userid = req.userData.userid
+
+    User.find({ _id: userid })
+    .exec()
+    .then(result => {
+        if(result.length>0) {
+            const imageidOld = result[0].userProfilePic.id
+
+            if(imageidOld !== "null") {
+                cloudinary.uploader.destroy(imageidOld, (err,result) => {
+                    if(err) {
+                        return res.status(500).json({
+                            error: "error in deleting the old image"
+                        })
+                    }
+                })
+            }
+
+            const file = req.files.newUserImage
+
+            cloudinary.uploader.upload(file.tempFilePath, (err, image) => {
+                if(err) {
+                    return res.status(500).json({
+                        error: "image upload failed"
+                    })
+                }
+                User.updateOne({ _id: userid }, {
+                    $set: { userProfilePic: {
+                        url: image.url,
+                        id: image.public_id
+                    }}
+                })
+                .exec()
+                .then(docs => {
+                    return res.status(200).json({
+                        message: "Image updated successfully"
+                    })
+                })
+                .catch(err => {
+                    console.log(err);
+                    return res.status(500).json({
+                        error: err
+                    })
+                })
+            })
+        } else {
+            return res.status(404).json({
+                error: "Owner not found"
+            })
         }
     })
     .catch(err => {

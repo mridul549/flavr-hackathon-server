@@ -4,6 +4,15 @@ const bcrypt     = require('bcrypt');
 const jwt        = require('jsonwebtoken');
 const mailController = require('../../mail/mailController')
 
+const cloudinary = require('cloudinary').v2;
+
+cloudinary.config({ 
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
+    api_key: process.env.CLOUDINARY_API_KEY, 
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true
+});
+
 module.exports.signup = (req,res) => {
     Owner.find({email: req.body.email})
     .exec()
@@ -205,6 +214,133 @@ module.exports.verifyOwner = (req,res) => {
         return res.status(200).json({
             message: "Owner verified"
         })
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.updateOwner = (req,res) => {
+    const ownerid = req.userData.ownerid
+    const ownername = req.body.ownerName
+    const email = req.body.email
+
+    Owner.find({ _id: ownerid })
+    .exec()
+    .then(result => {
+        if(result.length>0) {
+            Owner.updateOne({ _id: ownerid }, {
+                $set: {
+                    ownerName: ownername,
+                    email: email
+                }
+            })
+            .exec()
+            .then(result => {
+                return res.status(200).json({
+                    message: "Owner updated successfully"
+                })
+            })
+            .catch(err => {
+                console.log(err);
+                res.status(500).json({
+                    error: err
+                })
+            })
+        } else {
+            return res.status(404).json({
+                error: "Owner not found"
+            })
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.updateImage = (req,res) => {
+    const ownerid = req.userData.ownerid
+
+    Owner.find({ _id: ownerid })
+    .exec()
+    .then(result => {
+        if(result.length>0) {
+            const imageidOld = result[0].ownerProfilePic.id
+
+            if(imageidOld !== "null") {
+                cloudinary.uploader.destroy(imageidOld, (err,result) => {
+                    if(err) {
+                        return res.status(500).json({
+                            error: "error in deleting the old image"
+                        })
+                    }
+                })
+            }
+
+            const file = req.files.newOwnerImage
+
+            cloudinary.uploader.upload(file.tempFilePath, (err, image) => {
+                if(err) {
+                    return res.status(500).json({
+                        error: "image upload failed"
+                    })
+                }
+                Owner.updateOne({ _id: ownerid }, {
+                    $set: { ownerProfilePic: {
+                        url: image.url,
+                        id: image.public_id
+                    }}
+                })
+                .exec()
+                .then(docs => {
+                    return res.status(200).json({
+                        message: "Image updated successfully",
+                        url: image.url
+                    })
+                })
+                .catch(err => {
+                    console.log(err);
+                    res.status(500).json({
+                        error: err
+                    })
+                })
+            })
+        } else {
+            return res.status(404).json({
+                error: "Owner not found"
+            })
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.getOwnerProfile = (req,res) => {
+    const owneremail = req.query.ownermail
+
+    Owner.find({ email: owneremail })
+    .select('_id ownerName email outlets ownerProfilePic')
+    .exec()
+    .then(result => {
+        if(result.length>0) {
+            return res.status(201).json({
+                owner: result
+            })
+        } else {
+            return res.status(404).json({
+                error: "Owner not found"
+            })
+        }
     })
     .catch(err => {
         console.log(err);
