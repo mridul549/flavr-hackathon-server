@@ -159,7 +159,6 @@ module.exports.google_Login_Signup = (req,res) => {
     .then(result => {
         // no owner found with same credentials- sign the owner up
         if(result.length==0){
-            // TODO- Update or add the details in future which are recieved through google
             // update the profile pic too
             const owner = new Owner({
                 _id: new mongoose.Types.ObjectId,

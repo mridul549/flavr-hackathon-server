@@ -397,7 +397,7 @@ module.exports.deleteOutlet = (req,res) => {
                     })
                 }
             })
-
+            
             Outlet.deleteOne({ _id: outletid })
             .exec()
             .then(async result => {
