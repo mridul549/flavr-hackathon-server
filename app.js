@@ -17,7 +17,15 @@ mongoose.connection.on('connected', function() {
 app.use(fileUpload({
     useTempFiles: true
 }))
-
+// For the cashfree webhook
+app.use(
+    express.json({
+        limit: '1mb',
+        verify: (req, res, buf) => {
+            req.rawBody = buf.toString();
+        },
+    })
+);
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: false}));
 

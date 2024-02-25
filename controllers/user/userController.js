@@ -14,6 +14,14 @@ cloudinary.config({
     secure: true
 });
 
+cloudinary.config({ 
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
+    api_key: process.env.CLOUDINARY_API_KEY, 
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true
+});
+
+// Already signed up Unverified users directed to otp directly
 module.exports.signup = (req,res) => {
     User.find({ email: req.body.email })
     .exec()
@@ -61,10 +69,11 @@ module.exports.signup = (req,res) => {
                          * the role determines whether it's a user, owner or maintainer
                          * user -> 0
                          * owner -> 1
+                         * maintainer -> 2
                          */
                         const key = req.body.email
                         const role = 0
-                        await mailController.sendMail(key,role)
+                        await mailQueue.add({ key, role })
                         return res.status(201).json({
                             action: "User created and OTP Sent",
                             message: "Please check your mailbox for the OTP verification code."
@@ -164,6 +173,7 @@ module.exports.google_Login_Signup = (req,res) => {
     .then(result => {
         // no user found with same credentials- sign the user up
         if(result.length==0){
+            // TODO- Update or add the details in future which are recieved through google
             // update the profile pic too
             const user = new User({
                 _id: new mongoose.Types.ObjectId,
@@ -204,132 +214,6 @@ module.exports.google_Login_Signup = (req,res) => {
         })
     })
 }
-
-module.exports.getUserProfile = (req,res) => {
-    const userid = req.userData.userid
-
-    User.find({ _id: userid })
-    .select('_id userName email orders userProfilePic')
-    .exec()
-    .then(result => {
-        if(result.length>0) {
-            return res.status(201).json({
-                user: result
-            })
-        } else {
-            return res.status(404).json({
-                error: "User not found!"
-            })
-        }
-    })
-    .catch(err => {
-        console.log(err);
-        return res.status(500).json({
-            error: err
-        })
-    })
-}
-
-module.exports.updateUser = (req,res) => {
-    const userid = req.userData.userid
-
-    User.find({ _id: userid })
-    .exec()
-    .then(result => {
-        if(result.length>0) {
-            const updateOps = {};
-            for(const ops of req.body.updates) {
-                updateOps[ops.propName] = ops.value
-            }
-            User.updateOne({ _id: userid }, {
-                $set: updateOps
-            })
-            .exec()
-            .then(result => {
-                return res.status(200).json({
-                    message: "User updated successfully"
-                })
-            })
-            .catch(err => {
-                console.log(err);
-                res.status(500).json({
-                    error: err
-                })
-            })
-        } else {
-            return res.status(404).json({
-                error: "User not found"
-            })
-        }
-    })
-    .catch(err => {
-        console.log(err);
-        res.status(500).json({
-            error: err
-        })
-    })
-}
-
-module.exports.updateImage = (req,res) => {
-    const userid = req.userData.userid
-
-    User.find({ _id: userid })
-    .exec()
-    .then(result => {
-        if(result.length>0) {
-            const imageidOld = result[0].userProfilePic.id
-
-            if(imageidOld !== "null") {
-                cloudinary.uploader.destroy(imageidOld, (err,result) => {
-                    if(err) {
-                        return res.status(500).json({
-                            error: "error in deleting the old image"
-                        })
-                    }
-                })
-            }
-
-            const file = req.files.newUserImage
-
-            cloudinary.uploader.upload(file.tempFilePath, (err, image) => {
-                if(err) {
-                    return res.status(500).json({
-                        error: "image upload failed"
-                    })
-                }
-                User.updateOne({ _id: userid }, {
-                    $set: { userProfilePic: {
-                        url: image.url,
-                        id: image.public_id
-                    }}
-                })
-                .exec()
-                .then(docs => {
-                    return res.status(200).json({
-                        message: "Image updated successfully"
-                    })
-                })
-                .catch(err => {
-                    console.log(err);
-                    return res.status(500).json({
-                        error: err
-                    })
-                })
-            })
-        } else {
-            return res.status(404).json({
-                error: "Owner not found"
-            })
-        }
-    })
-    .catch(err => {
-        console.log(err);
-        return res.status(500).json({
-            error: err
-        })
-    })
-}
-
 
 // adds a single product to cart with its product id and quantity
 module.exports.addOneProductToCart = (req,res) => {
@@ -603,4 +487,161 @@ module.exports.removeProductCart = async (req,res) => {
             error: "Couldn't remove product from cart"
         })   
     }
+}
+
+module.exports.updateImage = (req,res) => {
+    const userid = req.userData.userid
+
+    User.find({ _id: userid })
+    .exec()
+    .then(result => {
+        if(result.length>0) {
+            const imageidOld = result[0].userProfilePic.id
+
+            if(imageidOld !== "null") {
+                cloudinary.uploader.destroy(imageidOld, (err,result) => {
+                    if(err) {
+                        return res.status(500).json({
+                            error: "error in deleting the old image"
+                        })
+                    }
+                })
+            }
+
+            const file = req.files.newUserImage
+
+            cloudinary.uploader.upload(file.tempFilePath, (err, image) => {
+                if(err) {
+                    return res.status(500).json({
+                        error: "image upload failed"
+                    })
+                }
+                User.updateOne({ _id: userid }, {
+                    $set: { userProfilePic: {
+                        url: image.url,
+                        id: image.public_id
+                    }}
+                })
+                .exec()
+                .then(docs => {
+                    return res.status(200).json({
+                        message: "Image updated successfully"
+                    })
+                })
+                .catch(err => {
+                    console.log(err);
+                    return res.status(500).json({
+                        error: err
+                    })
+                })
+            })
+        } else {
+            return res.status(404).json({
+                error: "Owner not found"
+            })
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.getUserProfile = (req,res) => {
+    const userid = req.userData.userid
+
+    User.find({ _id: userid })
+    .select('_id userName email orders userProfilePic')
+    .exec()
+    .then(result => {
+        if(result.length>0) {
+            return res.status(201).json({
+                user: result
+            })
+        } else {
+            return res.status(404).json({
+                error: "User not found!"
+            })
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.updateUser = (req,res) => {
+    const userid = req.userData.userid
+
+    User.find({ _id: userid })
+    .exec()
+    .then(result => {
+        if(result.length>0) {
+            const updateOps = {};
+            for(const ops of req.body.updates) {
+                updateOps[ops.propName] = ops.value
+            }
+            User.updateOne({ _id: userid }, {
+                $set: updateOps
+            })
+            .exec()
+            .then(result => {
+                return res.status(200).json({
+                    message: "User updated successfully"
+                })
+            })
+            .catch(err => {
+                console.log(err);
+                res.status(500).json({
+                    error: err
+                })
+            })
+        } else {
+            return res.status(404).json({
+                error: "User not found"
+            })
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.updateFcmToken = (req,res) => {
+    const userid = req.userData.userid
+    const fcmToken = req.body.fcm_token
+
+    User.find({ _id: userid })
+    .exec()
+    .then(result => {
+        if(result.length>0) {
+            User.findOneAndUpdate({ _id: userid }, {
+                $set: { fcm_token: fcmToken }
+            })
+            .exec()
+            .then(result => {
+                return res.status(200).json({
+                    message: "FCM Token updated successfully"
+                })
+            })
+            .catch(err => {
+                console.log(err);
+                res.status(500).json({
+                    error: err
+                })
+            })
+        } else {
+            return res.status(404).json({
+                error: "User not found"
+            })
+        }
+    })
+
 }

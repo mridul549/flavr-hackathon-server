@@ -202,6 +202,123 @@ module.exports.google_Login_Signup = (req,res) => {
     })
 }
 
+module.exports.forgetPassword = (req,res) => {
+    const newPassword = req.body.newPassword
+    const ownerid = req.userData.ownerid
+
+    Owner.find({ _id: ownerid })
+    .exec()
+    .then(result => {
+        if(result.length<1){
+            return res.status(401).json({
+                message: "Auth Failed- No owner found"
+            })
+        }
+        const authMethod = result[0].authMethod
+        if(authMethod=="google"){
+            return res.status(409).json({
+                message: "Password is not set for this account."
+            })
+        }
+
+        bcrypt.hash(newPassword, 10, (err, hash) => {
+            if(err){
+                return res.status(500).json({
+                    message: err
+                })
+            } else {
+                Owner.updateOne({ _id: ownerid }, {
+                    $set: { password: hash }
+                })
+                .exec()
+                .then(updatePass => {
+                    return res.status(200).json({
+                        message: "Password successfully updated"
+                    })
+                })
+                .catch(err => {
+                    console.log(err);
+                    return res.status(500).json({
+                        message: "Error while updating password!!"
+                    })
+                })
+            }
+        })
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            message: err
+        })
+    })
+}
+
+module.exports.resetPassword = (req,res) => {
+    const oldPassword = req.body.oldPassword
+    const newPassword = req.body.newPassword
+    const ownerid = req.userData.ownerid
+
+    Owner.find({ _id: ownerid })
+    .exec()
+    .then(result => {
+        if(result.length<1){
+            return res.status(401).json({
+                message: "Auth Failed- No owner found"
+            })
+        }
+        const authMethod = result[0].authMethod
+        if(authMethod=="google"){
+            return res.status(409).json({
+                message: "Password is not set for this account."
+            })
+        }
+        bcrypt.compare(oldPassword, result[0].password, (err, result) => {
+            if(err) {
+                return res.status(500).json({
+                    error: err
+                })
+            } 
+            if(result) {
+                bcrypt.hash(newPassword, 10, (err, hash) => {
+                    if(err){
+                        return res.status(500).json({
+                            error: err
+                        })
+                    } else {
+                        Owner.updateOne({ _id: ownerid }, {
+                            $set: { password: hash }
+                        })
+                        .exec()
+                        .then(updatePass => {
+                            return res.status(200).json({
+                                message: "Password successfully updated"
+                            })
+                        })
+                        .catch(err => {
+                            console.log(err);
+                            return res.status(500).json({
+                                error: err
+                            })
+                        })
+                    }
+                })
+            }else {
+                return res.status(401).json({
+                    message: "Old password entered is wrong."
+                })
+            }
+        })
+
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
+
+}
+
 module.exports.verifyOwner = (req,res) => {
     const email = req.body.email
 
@@ -217,6 +334,55 @@ module.exports.verifyOwner = (req,res) => {
     .catch(err => {
         console.log(err);
         return res.status(500).json({
+            error: err
+        })
+    })
+}
+
+// to be used to transfer ownership of an outlet
+module.exports.addOutlet = (req,res) => {
+    const ownerid = req.userData.ownerid
+    const outletid = req.body.outletid
+
+    Owner.updateOne({ _id: ownerid }, {
+        $push: {
+            outlets: outletid
+        }
+    })
+    .exec()
+    .then(result => {
+        return res.status(201).json({
+            message: "Outlet added successfully"
+        })
+    })
+    .catch(err => {
+        console.log(err);
+        res.status(500).json({
+            error: err
+        })
+    })
+}
+
+module.exports.getOutlets = (req,res) => {
+    const ownerid = req.userData.ownerid
+
+    Owner.find({ _id: ownerid })
+    .populate('outlets')
+    .exec()
+    .then(result => {
+        if(result){
+            return res.status(200).json({
+                outlets: result[0].outlets
+            })
+        } else {
+            return res.status(404).json({
+                error: "No outlets found"
+            })
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        res.status(500).json({
             error: err
         })
     })

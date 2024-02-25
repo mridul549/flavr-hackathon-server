@@ -16,6 +16,7 @@ apiKey.apiKey = process.env.BREVO_KEY
 let sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail(); 
 
 const otpTemplate = fs.readFileSync(path.join(__dirname, './templates/otp.ejs'), 'utf8')
+const resetTemplate = fs.readFileSync(path.join(__dirname, './templates/password.ejs'), 'utf8')
 
 async function generateOTP (key,role) {
     const { customAlphabet } = await import('nanoid');
@@ -48,6 +49,61 @@ async function generateOTP (key,role) {
         console.log(error);
         throw error
     }
+}
+
+async function sendPasswordResetMailHelper (req, res, key, url) {
+    const renderedHTML = ejs.render(resetTemplate, { resetLink: url })
+
+    try {
+        sendSmtpEmail.subject = `FlavR Password Reset Mail`;
+        sendSmtpEmail.htmlContent = renderedHTML;
+        sendSmtpEmail.sender = {"name":"FlavR","email":"bistroverse@gmail.com"};
+        sendSmtpEmail.to = [{"email": key}];
+
+        apiInstance.sendTransacEmail(sendSmtpEmail).then(function(data) {}, 
+        function(error) {
+            console.error(error);
+        });
+        
+    } catch (error) {
+        console.log(error);
+        throw error
+    }
+}
+
+module.exports.sendPasswordResetMail = (req,res) => {
+    const email = req.body.email
+
+    Owner.find({ email: email })
+    .exec()
+    .then(async result => {
+        if(result.length>0) {
+            const id = result[0]._id
+
+            const token = jwt.sign({
+                email: email,
+                ownerid: id,
+            }, process.env.TOKEN_SECRET, {
+                expiresIn: "15m"
+            })
+
+            // TODO: Change the URL to the frontend URL
+            const url = `https://flavr.onrender.com/resetpassword?id=${id}&token=${token}`
+
+            await sendPasswordResetMailHelper(req,res,email,url)
+
+        } else {
+            return res.status(404).json({
+                message: "Email doesn't exist"
+            })
+        }
+    })
+    .catch(err => {
+        console.log(err);
+        return res.status(500).json({
+            error: err
+        })
+    })
 }
 
 module.exports.sendMail = async (key,role) => {
